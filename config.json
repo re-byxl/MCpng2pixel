@@ -1,0 +1,11 @@
+{
+    "block_size": "9",
+    "grid_cells": "auto",
+    "mode": "contrast_priority",
+    "skip_litematic": false,
+    "blue_penalty": {
+        "threshold_b": -15,
+        "penalty_purple": 25,
+        "penalty_pink": 20
+    }
+}
