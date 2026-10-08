@@ -49,6 +49,11 @@ def parse_args():
         help="跳过 .litematic 生成，会覆盖配置文件中的设置。",
     )
     parser.add_argument(
+        "--skip-postprocess",
+        action="store_true",
+        help="跳过背景黑色删除后处理。",
+    )
+    parser.add_argument(
         "--block-size",
         type=int,
         help="手动指定方块大小（像素），会覆盖配置文件中的设置。",
@@ -71,6 +76,7 @@ def main():
 
     mode = args.mode if args.mode is not None else config.get("mode", "balanced")
     skip_litematic = args.skip_litematic if args.skip_litematic else config.get("skip_litematic", False)
+    skip_postprocess = args.skip_postprocess if args.skip_postprocess else config.get("skip_postprocess", False)
 
     from grid_utils import set_block_size, auto_blocksize, parse_grid_cells, read_image, DEBUG_FILE
 
@@ -143,6 +149,13 @@ def main():
     code = step3.main()
     if code != 0:
         return code
+
+    if not skip_postprocess:
+        print("[STEP 3.5/4] 后处理...")
+        step35 = load_module("_step35", "3postprocess.py")
+        code = step35.main()
+        if code != 0:
+            return code
 
     if not skip_litematic:
         print("[STEP 4/4] 生成 .litematic...")

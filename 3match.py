@@ -16,6 +16,44 @@ OUT_PREVIEW = "output/preview"
 OUT_CSV = "output/csv"
 MARGIN = 4
 
+_config = None
+
+
+def _load_config():
+    global _config
+    if _config is not None:
+        return _config
+    config_path = "config.json"
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            _config = json.load(f)
+    else:
+        _config = {}
+    return _config
+
+
+def _get_path_config():
+    config = _load_config()
+    return config.get("paths", {})
+
+
+def _get_cell_config():
+    config = _load_config()
+    return config.get("cell", {})
+
+
+def _get_output_dirs():
+    path_cfg = _get_path_config()
+    preview = path_cfg.get("output_preview", OUT_PREVIEW)
+    csv = path_cfg.get("output_csv", OUT_CSV)
+    return preview, csv
+
+
+def _get_margin():
+    cell_cfg = _get_cell_config()
+    return cell_cfg.get("margin", MARGIN)
+
+
 os.makedirs(OUT_PREVIEW, exist_ok=True)
 os.makedirs(OUT_CSV, exist_ok=True)
 
@@ -33,24 +71,31 @@ PURPLE_INDICES = [i for i, n in enumerate(names) if "purple" in n or "magenta" i
 PINK_INDICES = [i for i, n in enumerate(names) if "pink" in n]
 
 _BLUE_PENALTY = None
+_NEUTRAL_MASK_CONFIG = None
 
 
 def _load_blue_penalty():
     global _BLUE_PENALTY
     if _BLUE_PENALTY is not None:
         return _BLUE_PENALTY
-    config_path = "config.json"
-    if os.path.exists(config_path):
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-        _BLUE_PENALTY = config.get("blue_penalty", {
-            "threshold_b": -15,
-            "penalty_purple": 25,
-            "penalty_pink": 20
-        })
-    else:
-        _BLUE_PENALTY = {"threshold_b": -15, "penalty_purple": 25, "penalty_pink": 20}
+    config = _load_config()
+    _BLUE_PENALTY = config.get("blue_penalty", {
+        "threshold_b": -15,
+        "penalty_purple": 25,
+        "penalty_pink": 20
+    })
     return _BLUE_PENALTY
+
+
+def _load_neutral_mask_config():
+    global _NEUTRAL_MASK_CONFIG
+    if _NEUTRAL_MASK_CONFIG is not None:
+        return _NEUTRAL_MASK_CONFIG
+    config = _load_config()
+    _NEUTRAL_MASK_CONFIG = config.get("neutral_mask", {
+        "enabled": False
+    })
+    return _NEUTRAL_MASK_CONFIG
 
 
 def candidate_indices(lab, params):
@@ -67,7 +112,8 @@ def candidate_indices(lab, params):
         + params["chroma_weight"] * chroma_gap
     )
 
-    if src_chroma >= params["pastel_chroma_threshold"]:
+    neutral_cfg = _load_neutral_mask_config()
+    if neutral_cfg.get("enabled", False) and src_chroma >= params["pastel_chroma_threshold"]:
         neutral_mask = palette_chroma <= params["neutral_chroma_threshold"]
         score = score + neutral_mask * chroma_loss * params["chroma_loss_weight"]
 
@@ -222,6 +268,9 @@ def process(img_path, mode_name):
     ny = h // block
     nx = w // block
 
+    margin = _get_margin()
+    out_preview, out_csv = _get_output_dirs()
+
     lab = color.rgb2lab(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB) / 255.0)
     preview = np.zeros_like(crop)
     table = []
@@ -229,7 +278,7 @@ def process(img_path, mode_name):
     pixel_count_grid = np.zeros((ny, nx), dtype=np.int32)
 
     for ix, iy, x0, y0, x1, y1 in iter_cells(crop, block):
-        inner = lab[y0 + MARGIN : y1 - MARGIN, x0 + MARGIN : x1 - MARGIN]
+        inner = lab[y0 + margin : y1 - margin, x0 + margin : x1 - margin]
         if inner.size == 0:
             continue
         mean_grid[iy, ix] = inner.mean(axis=(0, 1))
@@ -248,9 +297,11 @@ def process(img_path, mode_name):
         table.append((ix, iy, name))
 
     fname = os.path.splitext(os.path.basename(img_path))[0]
-    save_png(os.path.join(OUT_PREVIEW, f"{fname}.png"), preview)
+    os.makedirs(out_preview, exist_ok=True)
+    save_png(os.path.join(out_preview, f"{fname}.png"), preview)
 
-    csv_path = os.path.join(OUT_CSV, f"{fname}.csv")
+    csv_path = os.path.join(out_csv, f"{fname}.csv")
+    os.makedirs(out_csv, exist_ok=True)
     with open(csv_path, "w", encoding="utf-8-sig") as f:
         f.write("x,y,block\n")
         for row in table:

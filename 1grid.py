@@ -2,12 +2,24 @@ import os
 
 import cv2
 
-from grid_utils import aligned_crop, iter_cells, read_image, save_image, get_block_size, get_grid_info
+from grid_utils import aligned_crop, iter_cells, read_image, save_image, get_block_size, get_grid_info, get_debug_dir, _load_config
 
 INPUT_DIR = "input_images"
-DEBUG_DIR = "debug/grid_output_images"
 
-os.makedirs(DEBUG_DIR, exist_ok=True)
+def _get_path_config():
+    config = _load_config()
+    return config.get("paths", {})
+
+GRID_OUTPUT_DIR = "debug/grid_output_images"
+
+def _get_grid_output_dir():
+    path_cfg = _get_path_config()
+    custom = path_cfg.get("grid_output_dir")
+    if custom:
+        return custom
+    return GRID_OUTPUT_DIR
+
+os.makedirs(_get_grid_output_dir(), exist_ok=True)
 
 
 def draw_grid(img, block):
@@ -68,10 +80,12 @@ def main():
     total = len(files)
     print(f"共检测到 {total} 张图片")
 
+    grid_output_dir = _get_grid_output_dir()
+
     for i, fname in enumerate(files, 1):
         print(f"[{i}/{total}] 处理 {fname}")
         in_path = os.path.join(INPUT_DIR, fname)
-        out_path = os.path.join(DEBUG_DIR, fname)
+        out_path = os.path.join(grid_output_dir, fname)
 
         ok = process_one_image(in_path, out_path)
         if ok:

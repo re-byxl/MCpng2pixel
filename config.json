@@ -3,9 +3,34 @@
     "grid_cells": "auto",
     "mode": "contrast_priority",
     "skip_litematic": false,
+    "skip_postprocess": true,
+
     "blue_penalty": {
-        "threshold_b": -15,
-        "penalty_purple": 25,
-        "penalty_pink": 20
+        "threshold_b": 0,
+        "penalty_purple": 0,
+        "penalty_pink": 0
+    },
+
+    "neutral_mask": {
+        "enabled": false
+    },
+
+    "paths": {
+        "input_dir": "input_images",
+        "output_preview": "output/preview",
+        "output_csv": "output/csv",
+        "debug_dir": "debug",
+        "color_debug": "debug/color_preview"
+    },
+
+    "cell": {
+        "margin": 4
+    },
+
+    "grid": {
+        "min_block": 6,
+        "center_ratio": 0.45,
+        "smooth_window": 9,
+        "shift_radius": 4
     }
 }

@@ -50,7 +50,7 @@ MATCH_MODES = {
         "repeat_penalty": 14.0,
         "contrast_weight": 0.55,
         "lightness_weight": 0.12,
-        "chroma_weight": 0.24,
+        "chroma_weight": 0.15,
         "chroma_loss_weight": 0.60,
         "pastel_chroma_threshold": 12.0,
         "neutral_chroma_threshold": 8.0,

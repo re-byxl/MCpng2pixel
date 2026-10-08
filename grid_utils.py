@@ -14,6 +14,31 @@ DEBUG_FILE = os.path.join(DEBUG_DIR, "grid_debug.txt")
 
 _block_size = None
 _grid_info = {}
+_config = None
+
+
+def _load_config():
+    global _config
+    if _config is not None:
+        return _config
+    config_path = "config.json"
+    if os.path.exists(config_path):
+        import json
+        with open(config_path, "r", encoding="utf-8") as f:
+            _config = json.load(f)
+    else:
+        _config = {}
+    return _config
+
+
+def _get_grid_config():
+    config = _load_config()
+    return config.get("grid", {})
+
+
+def _get_path_config():
+    config = _load_config()
+    return config.get("paths", {})
 
 
 def set_block_size(size):
@@ -22,7 +47,35 @@ def set_block_size(size):
 
 
 def get_block_size():
-    return _block_size if _block_size is not None else DEFAULT_BLOCK_SIZE
+    if _block_size is not None:
+        return _block_size
+    grid_cfg = _get_grid_config()
+    return grid_cfg.get("default_block_size", DEFAULT_BLOCK_SIZE)
+
+
+def get_min_block():
+    grid_cfg = _get_grid_config()
+    return grid_cfg.get("min_block", MIN_BLOCK)
+
+
+def get_center_ratio():
+    grid_cfg = _get_grid_config()
+    return grid_cfg.get("center_ratio", CENTER_RATIO)
+
+
+def get_smooth_window():
+    grid_cfg = _get_grid_config()
+    return grid_cfg.get("smooth_window", SMOOTH_WINDOW)
+
+
+def get_shift_radius():
+    grid_cfg = _get_grid_config()
+    return grid_cfg.get("shift_radius", SHIFT_RADIUS)
+
+
+def get_debug_dir():
+    path_cfg = _get_path_config()
+    return path_cfg.get("debug_dir", DEBUG_DIR)
 
 
 def set_grid_info(info):
@@ -35,8 +88,10 @@ def get_grid_info():
 
 
 def write_grid_debug(img_name, info):
-    os.makedirs(DEBUG_DIR, exist_ok=True)
-    with open(DEBUG_FILE, "a", encoding="utf-8") as f:
+    debug_dir = get_debug_dir()
+    os.makedirs(debug_dir, exist_ok=True)
+    debug_file = os.path.join(debug_dir, "grid_debug.txt")
+    with open(debug_file, "a", encoding="utf-8") as f:
         f.write(f"\n{'='*60}\n")
         f.write(f"图片: {img_name}\n")
         f.write(f"{'='*60}\n")
@@ -77,7 +132,7 @@ def auto_blocksize(img_width, img_height, grid_cells_x=None, grid_cells_y=None):
     cw = max(1, img_width // grid_cells_x)
     ch = max(1, img_height // grid_cells_y)
     size = min(cw, ch)
-    size = max(MIN_BLOCK, size)
+    size = max(get_min_block(), size)
 
     size = find_dividable_size(img_width, img_height, size)
     return size
@@ -85,12 +140,13 @@ def auto_blocksize(img_width, img_height, grid_cells_x=None, grid_cells_y=None):
 
 def find_dividable_size(img_width, img_height, target_size):
     """从 target_size 开始向下找能同时整除宽高的最大值"""
+    min_block = get_min_block()
     size = target_size
-    while size >= MIN_BLOCK:
+    while size >= min_block:
         if img_width % size == 0 and img_height % size == 0:
             return size
         size -= 1
-    return MIN_BLOCK
+    return min_block
 
 
 def read_image(img_path):
@@ -159,7 +215,9 @@ def crop_like_original(img):
     return img[y : y + h, x : x + w]
 
 
-def smooth_signal(signal, window=SMOOTH_WINDOW):
+def smooth_signal(signal, window=None):
+    if window is None:
+        window = get_smooth_window()
     if signal.size == 0:
         return signal
     window = min(window, signal.size)
@@ -228,11 +286,12 @@ def grid_score(gray, block, x_offset, y_offset):
 
 
 def refine_offsets(crop, block, x_offset, y_offset):
+    shift_radius = get_shift_radius()
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
     best = (x_offset, y_offset)
     best_score = -1.0
-    for dx in range(-SHIFT_RADIUS, SHIFT_RADIUS + 1):
-        for dy in range(-SHIFT_RADIUS, SHIFT_RADIUS + 1):
+    for dx in range(-shift_radius, shift_radius + 1):
+        for dy in range(-shift_radius, shift_radius + 1):
             trial_x = (x_offset + dx) % block
             trial_y = (y_offset + dy) % block
             score = grid_score(gray, block, trial_x, trial_y)
@@ -244,8 +303,10 @@ def refine_offsets(crop, block, x_offset, y_offset):
 
 def center_window(crop):
     h, w = crop.shape[:2]
-    ch = max(MIN_BLOCK * 6, int(round(h * CENTER_RATIO)))
-    cw = max(MIN_BLOCK * 6, int(round(w * CENTER_RATIO)))
+    min_block = get_min_block()
+    center_ratio = get_center_ratio()
+    ch = max(min_block * 6, int(round(h * center_ratio)))
+    cw = max(min_block * 6, int(round(w * center_ratio)))
     ch = min(ch, h)
     cw = min(cw, w)
 
