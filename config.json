@@ -12,7 +12,7 @@
     },
 
     "neutral_mask": {
-        "enabled": false
+        "enabled": true
     },
 
     "paths": {
