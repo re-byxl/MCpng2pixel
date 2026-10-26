@@ -1,7 +1,7 @@
 {
     "block_size": "9",
     "grid_cells": "auto",
-    "mode": "contrast_priority",
+    "mode": "quality",
     "skip_litematic": false,
     "skip_postprocess": true,
 
@@ -24,11 +24,11 @@
     },
 
     "cell": {
-        "margin": 4
+        "margin": 2
     },
 
     "grid": {
-        "min_block": 6,
+        "min_block": 9,
         "center_ratio": 0.45,
         "smooth_window": 9,
         "shift_radius": 4
