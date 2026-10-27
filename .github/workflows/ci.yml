@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      - name: 安装依赖
+        run: uv sync --dev
+
+      - name: 代码风格（ruff）
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: 类型检查（mypy）
+        run: uv run mypy
+
+      - name: 测试（含黄金样本回归）
+        run: uv run pytest --cov=src/mcyqqs --cov-report=term-missing

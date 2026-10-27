@@ -5,22 +5,14 @@
     "skip_litematic": false,
     "skip_postprocess": true,
 
-    "blue_penalty": {
-        "threshold_b": 0,
-        "penalty_purple": 0,
-        "penalty_pink": 0
-    },
-
-    "neutral_mask": {
-        "enabled": true
-    },
-
     "paths": {
         "input_dir": "input_images",
         "output_preview": "output/preview",
         "output_csv": "output/csv",
+        "output_litematic": "output/litematic",
         "debug_dir": "debug",
-        "color_debug": "debug/color_preview"
+        "color_debug": "debug/color_preview",
+        "grid_output_dir": "debug/grid_output_images"
     },
 
     "cell": {
@@ -32,5 +24,36 @@
         "center_ratio": 0.45,
         "smooth_window": 9,
         "shift_radius": 4
+    },
+
+    "blue_penalty": {
+        "threshold_b": 0,
+        "penalty_purple": 0,
+        "penalty_pink": 0
+    },
+
+    "neutral_mask": {
+        "enabled": true
+    },
+
+    "tool": {
+        "input_dir": "input_litematic",
+        "output_dir": "output/litematic_transformed",
+        "suffix": "_transformed",
+        "overwrite": true,
+        "keep_properties": false,
+        "plan": {
+            "source_normal": "auto",
+            "target_normal": "keep",
+            "rotation": 0,
+            "mirror_h": false,
+            "mirror_v": false,
+            "rotate_x": 0,
+            "rotate_y": 0,
+            "rotate_z": 0
+        },
+        "replacements": {
+            "red_concrete": "red_terracotta"
+        }
     }
 }

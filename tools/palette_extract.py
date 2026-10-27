@@ -1,5 +1,7 @@
-import os
 import argparse
+import json
+import os
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -9,10 +11,15 @@ from scipy.signal import find_peaks
 from skimage import color
 from skimage.color import deltaE_ciede2000
 
-from palette import MC_BLOCKS
+from mcyqqs.matching.palette import load_palette
 
+#: 材质图（不在版本库里，需要自己准备）
 IMG = "MCblocks.png"
-PALETTE_FILE = "palette.py"
+
+#: 调色板数据文件
+PALETTE_FILE = str(
+    Path(__file__).resolve().parents[1] / "src" / "mcyqqs" / "matching" / "palette.json"
+)
 
 MARGIN = 4
 PEAK_DIST = 80
@@ -20,12 +27,16 @@ PEAK_HEIGHT = 0.03
 TARGET_ROWS = 6
 TARGET_COLS = 9
 
+#: 材质图是 9 列 6 行；第一行最右边 3 格不是方块
+SKIP_ROW = 0
+SKIP_FROM_COL = TARGET_COLS - 3
+
 OUTPUT_DIR = "extract_output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="从 MCblocks.png 提取调色板并自动对齐到 palette.py。")
+    parser = argparse.ArgumentParser(description="从 MCblocks.png 提取调色板并写回 palette.json。")
     parser.add_argument(
         "--brightness",
         type=float,
@@ -67,7 +78,7 @@ def normalize_bounds(bounds, target_count):
     best_start = 0
     best_score = -1e18
     for start in range(cell_count - target_count + 1):
-        seg = lengths[start:start + target_count].astype(np.float64)
+        seg = lengths[start : start + target_count].astype(np.float64)
         mean = seg.mean()
         std = seg.std()
         min_len = seg.min()
@@ -77,7 +88,7 @@ def normalize_bounds(bounds, target_count):
             best_score = score
             best_start = start
 
-    return bounds[best_start:best_start + target_count + 1]
+    return bounds[best_start : best_start + target_count + 1]
 
 
 def normalize_grid_bounds(row_bounds, col_bounds):
@@ -106,16 +117,18 @@ def extract_cells(img_np, row_bounds, col_bounds):
             preview[y0:y1, x0:x1] = mean_rgb
 
             r, g, b = (mean_rgb * 255).astype(int)
-            rows.append({
-                "x": ix,
-                "y": iy,
-                "r": r,
-                "g": g,
-                "b": b,
-                "L": float(mean_lab[0]),
-                "a": float(mean_lab[1]),
-                "b2": float(mean_lab[2]),
-            })
+            rows.append(
+                {
+                    "x": ix,
+                    "y": iy,
+                    "r": r,
+                    "g": g,
+                    "b": b,
+                    "L": float(mean_lab[0]),
+                    "a": float(mean_lab[1]),
+                    "b2": float(mean_lab[2]),
+                }
+            )
 
     return pd.DataFrame(rows), preview
 
@@ -137,30 +150,29 @@ def save_debug_outputs(img_np, row_bounds, col_bounds, df):
 
 
 def align_rows_to_blocks(df):
-    block_names = list(MC_BLOCKS.keys())
-    block_rgbs = np.array([MC_BLOCKS[name] for name in block_names], dtype=np.float32) / 255.0
+    palette = load_palette()
+    block_names = list(palette.keys())
+    block_rgbs = np.array([palette[name] for name in block_names], dtype=np.float32) / 255.0
     block_labs = color.rgb2lab(block_rgbs.reshape(-1, 1, 3)).reshape(-1, 3)
 
-    expected_total = 54
+    expected_total = TARGET_ROWS * TARGET_COLS
     expected_blocks = len(block_names)
     if len(df) != expected_total:
         raise ValueError(f"提取到的色块数为 {len(df)}，预期应为 {expected_total}")
-    if expected_blocks != 51:
-        raise ValueError(f"palette.py 中方块数为 {expected_blocks}，预期应为 51")
 
-    # 固定规则：9 列 6 行，共 54 格，跳过第一行最右边 3 格。
-    skip_mask = (df["y"] == 0) & (df["x"] >= 6)
+    # 固定规则：9 列 6 行，跳过第一行最右边 3 格（那几格不是方块）
+    skip_mask = (df["y"] == SKIP_ROW) & (df["x"] >= SKIP_FROM_COL)
     mapped_source = df.loc[~skip_mask].reset_index()
     skipped_rows = df.loc[skip_mask].copy().reset_index(drop=True)
 
     if len(mapped_source) != expected_blocks:
         raise ValueError(
-            f"应用固定跳过规则后剩余 {len(mapped_source)} 个色块，预期应为 {expected_blocks}"
+            f"应用固定跳过规则后剩余 {len(mapped_source)} 个色块，"
+            f"但调色板里有 {expected_blocks} 个方块 —— 两者对不上"
         )
 
     pair_cost = deltaE_ciede2000(
-        mapped_source[["L", "a", "b2"]].to_numpy(dtype=np.float32),
-        block_labs
+        mapped_source[["L", "a", "b2"]].to_numpy(dtype=np.float32), block_labs
     )
 
     rows = []
@@ -173,40 +185,45 @@ def align_rows_to_blocks(df):
         row["source_index"] = extract_idx
         rows.append(row)
 
-    mapped_df = pd.DataFrame(rows, columns=[
-        "block", "x", "y", "r", "g", "b", "L", "a", "b2", "deltaE", "source_index"
-    ])
+    mapped_df = pd.DataFrame(
+        rows, columns=["block", "x", "y", "r", "g", "b", "L", "a", "b2", "deltaE", "source_index"]
+    )
     return mapped_df, skipped_rows
 
 
 def save_mapped_outputs(mapped_df, skipped_df):
     mapped_path = os.path.join(OUTPUT_DIR, "palette_mapped.csv")
     skipped_path = os.path.join(OUTPUT_DIR, "palette_skipped.csv")
-    py_path = os.path.join(OUTPUT_DIR, "palette_generated.py")
-    backup_path = os.path.join(OUTPUT_DIR, "palette_backup.py")
+    json_path = os.path.join(OUTPUT_DIR, "palette_generated.json")
+    backup_path = os.path.join(OUTPUT_DIR, "palette_backup.json")
 
     mapped_df.to_csv(mapped_path, index=False, encoding="utf-8-sig")
     skipped_df.to_csv(skipped_path, index=False, encoding="utf-8-sig")
 
-    lines = ["MC_BLOCKS = {"]
-    for _, row in mapped_df.iterrows():
-        lines.append(f'    "{row["block"]}": ({int(row["r"])}, {int(row["g"])}, {int(row["b"])}),')
-    lines.append("}")
-    lines.append("")
+    blocks = {
+        row["block"]: [int(row["r"]), int(row["g"]), int(row["b"])]
+        for _, row in mapped_df.iterrows()
+    }
+    payload = {
+        "_comment": "方块调色板。rgb 是方块在游戏里的近似显示色（sRGB 0-255）。",
+        "_source": "由 tools/palette_extract.py 从 MCblocks.png 采样生成；MCblocks.png 未纳入版本库。",
+        "blocks": blocks,
+    }
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
 
     if os.path.exists(PALETTE_FILE):
-        with open(PALETTE_FILE, "r", encoding="utf-8") as f:
+        with open(PALETTE_FILE, encoding="utf-8") as f:
             original = f.read()
         with open(backup_path, "w", encoding="utf-8") as f:
             f.write(original)
 
-    with open(py_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+    with open(json_path, "w", encoding="utf-8") as f:
+        f.write(text)
 
     with open(PALETTE_FILE, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+        f.write(text)
 
-    return mapped_path, skipped_path, py_path, backup_path
+    return mapped_path, skipped_path, json_path, backup_path
 
 
 def save_palette_overview(mapped_df, ncols=5):
@@ -224,7 +241,7 @@ def save_palette_overview(mapped_df, ncols=5):
     height = nrows * cell_h + pad * 2
     canvas = np.full((height, width, 3), 245, dtype=np.uint8)
 
-    for idx, (name, rgb) in enumerate(zip(names, colors)):
+    for idx, (name, rgb) in enumerate(zip(names, colors, strict=False)):
         row = idx // ncols
         col = idx % ncols
         x0 = pad + col * cell_w
@@ -273,6 +290,14 @@ def cleanup_legacy_outputs():
 
 def main():
     args = parse_args()
+    if not os.path.exists(IMG):
+        print(
+            f"找不到材质图 {IMG}。\n"
+            f"这个文件不在版本库里，需要自己准备：一张 9x6 排布的方块材质图。\n"
+            f"（放到仓库根目录，或用 --brightness 之外的方式指定路径）"
+        )
+        return 1
+
     img = Image.open(IMG).convert("RGB")
     img_np = np.array(img) / 255.0
     img_np = apply_brightness(img_np, args.brightness)
@@ -282,11 +307,11 @@ def main():
     print("rows:", len(row_bounds) - 1, "cols:", len(col_bounds) - 1)
     print("brightness:", args.brightness)
 
-    df, preview = extract_cells(img_np, row_bounds, col_bounds)
+    df, _preview = extract_cells(img_np, row_bounds, col_bounds)
     save_debug_outputs(img_np, row_bounds, col_bounds, df)
 
     mapped_df, skipped_df = align_rows_to_blocks(df)
-    mapped_path, skipped_path, py_path, backup_path = save_mapped_outputs(mapped_df, skipped_df)
+    mapped_path, skipped_path, json_path, backup_path = save_mapped_outputs(mapped_df, skipped_df)
     overview_path = save_palette_overview(mapped_df)
     cleanup_legacy_outputs()
 
@@ -294,20 +319,21 @@ def main():
     print(" - segmented.png         （带分割线的原图）")
     print(" - palette.csv           （原始提取结果，按扫描顺序）")
     print(" - palette_mapped.csv    （已与 block 名称自动对齐）")
-    print(" - palette_skipped.csv   （存在于图里但未进入 palette.py 的色块）")
-    print(" - palette_generated.py  （同步更新后的调色板快照）")
+    print(" - palette_skipped.csv   （存在于图里但未进入调色板的色块）")
+    print(" - palette_generated.json（同步更新后的调色板快照）")
     print(" - palette_overview.png  （整合后的调色板总览图）")
     print("自动对齐结果：")
     print(" - 已映射方块数:", len(mapped_df))
     print(" - 跳过色块数:", len(skipped_df))
     print(" - 映射文件:", mapped_path)
     print(" - 已更新:", PALETTE_FILE)
-    print(" - 生成快照:", py_path)
+    print(" - 生成快照:", json_path)
     print(" - 旧版备份:", backup_path)
     print(" - 总览图:", overview_path)
     if not mapped_df.empty:
         print(" - 平均 deltaE:", round(float(mapped_df["deltaE"].mean()), 3))
         print(" - 最大 deltaE:", round(float(mapped_df["deltaE"].max()), 3))
+    return 0
 
 
 if __name__ == "__main__":

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Litematic 方向转换工具</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">▦</span>
+    <div>
+      <h1>Litematic 方向转换工具</h1>
+      <p>把墙面画转成地面平铺 · 旋转 / 镜像 · 方块批量替换</p>
+    </div>
+  </div>
+  <div class="top-actions">
+    <button id="btn-save" class="btn ghost">保存设置</button>
+    <button id="btn-run" class="btn primary">开始处理</button>
+  </div>
+</header>
+
+<main class="layout">
+
+  <!-- 左栏：文件 -->
+  <section class="panel col-files">
+    <h2 class="panel-title">1 · 输入与输出</h2>
+
+    <div class="field">
+      <label>输入文件夹</label>
+      <div class="row">
+        <input id="input-dir" type="text" spellcheck="false">
+        <button class="btn tiny" id="btn-browse-in">浏览…</button>
+        <button class="btn tiny ghost" id="btn-open-in" title="在文件管理器中打开">↗</button>
+      </div>
+      <p class="hint" id="input-hint">把 .litematic（或 5replace 用的 .csv）放进这个文件夹</p>
+    </div>
+
+    <div class="field">
+      <label>输出文件夹</label>
+      <div class="row">
+        <input id="output-dir" type="text" spellcheck="false">
+        <button class="btn tiny" id="btn-browse-out">浏览…</button>
+        <button class="btn tiny ghost" id="btn-open-out" title="在文件管理器中打开">↗</button>
+      </div>
+    </div>
+
+    <div class="field inline">
+      <label>文件名后缀</label>
+      <input id="suffix" type="text" spellcheck="false" class="short">
+      <label class="check"><input type="checkbox" id="overwrite"> 覆盖同名文件</label>
+    </div>
+
+    <h2 class="panel-title">2 · 待处理文件 <span id="file-count" class="badge">0</span></h2>
+    <div class="row toolbar">
+      <button class="btn tiny" id="btn-select-all">全选</button>
+      <button class="btn tiny" id="btn-select-none">全不选</button>
+      <button class="btn tiny ghost" id="btn-refresh">刷新</button>
+    </div>
+    <ul id="file-list" class="file-list"></ul>
+    <p id="file-empty" class="hint">没有找到 .litematic / .csv 文件</p>
+  </section>
+
+  <!-- 中栏：方向 -->
+  <section class="panel col-transform">
+    <h2 class="panel-title">3 · 方向转换</h2>
+
+    <div class="field">
+      <label>原图案所在平面</label>
+      <select id="source-normal">
+        <option value="auto">自动识别</option>
+        <option value="z">XY 立面（法线朝 Z，贴墙）</option>
+        <option value="y">XZ 地面（法线朝 Y，平铺）</option>
+        <option value="x">YZ 侧面（法线朝 X）</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>目标朝向</label>
+      <div class="preset-grid">
+        <button class="preset" data-target="keep">保持原样</button>
+        <button class="preset" data-target="z">立面（贴墙）</button>
+        <button class="preset" data-target="y">地面平铺</button>
+        <button class="preset" data-target="x">侧面</button>
+      </div>
+      <p class="hint">「地面平铺」= 把墙面画放倒，宽度沿 X、正面朝上，从上往下看方向正确。</p>
+    </div>
+
+    <div class="field">
+      <label>平面内旋转</label>
+      <div class="preset-grid four">
+        <button class="preset" data-rot="0">0°</button>
+        <button class="preset" data-rot="90">90°</button>
+        <button class="preset" data-rot="180">180°</button>
+        <button class="preset" data-rot="270">270°</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>镜像</label>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="mirror-h"> 水平翻转</label>
+        <label class="check"><input type="checkbox" id="mirror-v"> 垂直翻转</label>
+      </div>
+    </div>
+
+    <details class="advanced">
+      <summary>高级：额外全局旋转（在朝向转换之后执行）</summary>
+      <div class="row">
+        <label class="mini">绕 X</label>
+        <select id="rotate-x" class="mini-select">
+          <option value="0">0°</option><option value="90">90°</option>
+          <option value="180">180°</option><option value="270">270°</option>
+        </select>
+        <label class="mini">绕 Y</label>
+        <select id="rotate-y" class="mini-select">
+          <option value="0">0°</option><option value="90">90°</option>
+          <option value="180">180°</option><option value="270">270°</option>
+        </select>
+        <label class="mini">绕 Z</label>
+        <select id="rotate-z" class="mini-select">
+          <option value="0">0°</option><option value="90">90°</option>
+          <option value="180">180°</option><option value="270">270°</option>
+        </select>
+      </div>
+    </details>
+
+    <h2 class="panel-title">4 · 预览</h2>
+    <div class="preview-head">
+      <span id="preview-name" class="preview-name">未选择文件</span>
+      <span id="preview-info" class="hint"></span>
+    </div>
+    <div class="preview-grid">
+      <figure>
+        <figcaption>转换前</figcaption>
+        <canvas id="canvas-before"></canvas>
+      </figure>
+      <figure>
+        <figcaption>转换后</figcaption>
+        <canvas id="canvas-after"></canvas>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 右栏：替换 -->
+  <section class="panel col-replace">
+    <h2 class="panel-title">5 · 方块替换规则</h2>
+    <p class="hint">
+      左边是原方块，右边是替换成的方块。留空或填 <code>air</code> 表示删除该方块。
+      规则在方向转换时一并生效。
+    </p>
+    <div class="rule-head">
+      <span>原方块</span><span>替换为</span><span></span>
+    </div>
+    <div id="rule-list" class="rule-list"></div>
+    <div class="row toolbar">
+      <button class="btn tiny" id="btn-add-rule">+ 添加规则</button>
+      <button class="btn tiny ghost" id="btn-clear-rules">清空</button>
+    </div>
+    <label class="check"><input type="checkbox" id="keep-props"> 替换时保留方块属性（如朝向、朝上）</label>
+
+    <h2 class="panel-title">6 · 运行日志</h2>
+    <pre id="log" class="log">等待开始…</pre>
+  </section>
+
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

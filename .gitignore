@@ -46,7 +46,16 @@ htmlcov/
 data/
 output/
 debug/
+TODO/
+input_images/
+
+# Litematic 工具的输入投影文件
+input_litematic/*.litematic
+input_litematic/*.csv
+
+# 调色板提取工具的中间产物
+extract_output/
 
 *.png
 *.jpg
-TODO/
+

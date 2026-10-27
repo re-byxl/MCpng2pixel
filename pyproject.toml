@@ -1,20 +1,70 @@
 [project]
 name = "mcyqqs"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.2.0"
+description = "把图片转换成 Minecraft 方块投影，并做方向转换、方块替换与投稿产物生成"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "litemapy>=0.11.0b0",
+    "nbtlib>=2.0.4",
     "numpy>=2.5.3",
     "opencv-python>=5.0.0.93",
-    "ortools>=9.15.6755",
+    "pydantic>=2.9",
     "scikit-image>=0.26.0",
 ]
 
 [project.scripts]
-mcyqqs = "mcyqqs:main"
+mcyqqs = "mcyqqs.cli:main"
+
+[project.urls]
+Repository = "https://github.com/re-byxl/MCpng2pixel"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.14",
+    "pandas>=2.0",
+    "pillow>=10.0",
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "ruff>=0.9",
+    "scipy>=1.11",
+]
 
 [build-system]
-requires = ["uv_build>=0.12.11,<0.13.0"]
+requires = ["uv_build>=0.12.11"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "mcyqqs"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
+ignore = [
+    "E501",   # 行宽交给 formatter
+    "SIM108", # 三元表达式不一定更清楚
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src"]
+warn_unused_configs = true
+warn_redundant_casts = true
+no_implicit_optional = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["cv2.*", "skimage.*", "litemapy.*", "nbtlib.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
