@@ -1,51 +1,29 @@
-"""加载旧版"数字开头"脚本的辅助。
+"""加载旧版"数字开头"脚本名的辅助。
 
-重构之后这些脚本会变成普通模块（``mcyqqs.pipeline.postprocess`` 等），
-这里优先用新模块，找不到再按文件路径加载旧脚本 —— 这样测试不用跟着改。
+这些脚本在重构后都成了正式模块（``pixelmatic.pipeline.postprocess`` 等），
+这里只保留「旧脚本名 -> 新模块名」的映射，测试代码不用跟着改名。
 """
 
 from __future__ import annotations
 
 import importlib
-import importlib.util
-from pathlib import Path
 from types import ModuleType
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 #: 旧脚本名 -> 新模块名
 LEGACY_MODULES = {
-    "3postprocess.py": "mcyqqs.pipeline.postprocess",
-    "4litematic.py": "mcyqqs.pipeline.export",
-    "grid_utils.py": "mcyqqs.pipeline.grid",
-    "match_modes.py": "mcyqqs.matching.modes",
-    "palette.py": "mcyqqs.matching.palette",
-    "litematic_tool/core.py": "mcyqqs.litematic.core",
-    "litematic_tool/server.py": "mcyqqs.tool.server",
+    "3postprocess.py": "pixelmatic.pipeline.postprocess",
+    "4litematic.py": "pixelmatic.pipeline.export",
+    "grid_utils.py": "pixelmatic.pipeline.grid",
+    "match_modes.py": "pixelmatic.matching.modes",
+    "palette.py": "pixelmatic.matching.palette",
+    "litematic_tool/core.py": "pixelmatic.litematic.core",
+    "litematic_tool/server.py": "pixelmatic.tool.server",
 }
 
 
 def load(legacy_filename: str) -> ModuleType:
-    """加载一个模块：优先用重构后的正式模块，否则按文件路径加载旧脚本。"""
+    """按旧脚本名加载对应的正式模块。"""
     new_name = LEGACY_MODULES.get(legacy_filename)
-    if new_name:
-        try:
-            return importlib.import_module(new_name)
-        except ImportError:
-            pass
-
-    # 已经是包内模块的（litematic_tool/core.py），按点号路径导入
-    dotted = legacy_filename.replace("/", ".").removesuffix(".py")
-    if "." in dotted:
-        try:
-            return importlib.import_module(dotted)
-        except ImportError:
-            pass
-
-    path = PROJECT_ROOT / legacy_filename
-    spec = importlib.util.spec_from_file_location(f"_legacy_{path.stem}", path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"无法加载 {path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    if not new_name:
+        raise ImportError(f"没有和 {legacy_filename} 对应的模块")
+    return importlib.import_module(new_name)

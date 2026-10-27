@@ -14,7 +14,7 @@ SRC_DIR = PROJECT_ROOT / "src"
 # 让 tests.support.* 可以被直接导入
 sys.path.insert(0, str(TESTS_DIR))
 
-# 没装成包时也要能 import mcyqqs.*
+# 没装成包时也要能 import pixelmatic.*
 if SRC_DIR.is_dir():
     sys.path.insert(0, str(SRC_DIR))
 

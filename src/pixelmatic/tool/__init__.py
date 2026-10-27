@@ -2,13 +2,13 @@
 
 模块划分：
 
-- ``cli``    : 命令行入口（``python -m mcyqqs.tool``），批量转换 / 启动网页
+- ``cli``    : 命令行入口（``python -m pixelmatic.tool``），批量转换 / 启动网页
 - ``server`` : 本地网页前端所用的 HTTP 服务与 JSON API
 - ``dialog`` : 服务器端的目录选择弹窗（独立进程）
 - ``web``    : 前端静态页面（HTML / CSS / JS，无构建步骤）
 
 变换数学、投影读取、方块替换这些纯领域逻辑都在
-:mod:`mcyqqs.litematic.core` 里，这里不重复导出。
+:mod:`pixelmatic.litematic.core` 里，这里不重复导出。
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-#: 仓库根目录（``src/mcyqqs/tool/__init__.py`` 的上三层）
+#: 仓库根目录（``src/pixelmatic/tool/__init__.py`` 的上三层）
 #:
 #: 相对路径（输入目录、输出目录……）都以它为基准展开。
 PROJECT_ROOT = Path(__file__).resolve().parents[3]

@@ -6,72 +6,36 @@
 
 from __future__ import annotations
 
-import importlib.util
-import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+#: 黄金测试自带的配置（和仓库根目录的 config.json 解耦：
+#: 用户本地改根配置不会影响基线能否复现）
+GOLDEN_CONFIG = Path(__file__).resolve().parents[1] / "golden" / "config.json"
 
 #: 流水线跑完后应该出现的产物
 CSV_RELPATH = Path("output") / "csv"
 LITEMATIC_RELPATH = Path("output") / "litematic"
 
-#: 旧的扁平布局下，main.py 用相对路径加载这些脚本，所以要一起复制到临时目录
-LEGACY_SCRIPTS = (
-    "main.py",
-    "1grid.py",
-    "2color.py",
-    "3match.py",
-    "3postprocess.py",
-    "4litematic.py",
-    "grid_utils.py",
-    "match_modes.py",
-    "palette.py",
-)
-
-
-def has_new_api() -> bool:
-    """重构后的 ``mcyqqs`` 包是否已经可用。"""
-    return importlib.util.find_spec("mcyqqs") is not None
-
-
-def _command(workdir: Path) -> list[str]:
-    if has_new_api():
-        return [sys.executable, "-m", "mcyqqs", "convert"]
-    return [sys.executable, str(PROJECT_ROOT / "main.py")]
-
 
 def run_pipeline(workdir: Path, image_path: Path, config_path: Path | None = None) -> str:
     """在 ``workdir`` 里跑一遍完整流水线，返回子进程的标准输出。
 
-    ``image_path`` 会被放进 ``workdir/input_images/``；``config.json`` 会被复制到
-    ``workdir``，这样流水线用的是一份干净的、可复制的配置。
+    ``image_path`` 会被放进 ``workdir/input_images/``；配置默认复制
+    ``tests/golden/config.json``，这样流水线用的是一份干净的、可复制的配置。
     """
     workdir = Path(workdir)
     (workdir / "input_images").mkdir(parents=True, exist_ok=True)
 
-    config = Path(config_path) if config_path else PROJECT_ROOT / "config.json"
+    config = Path(config_path) if config_path else GOLDEN_CONFIG
     shutil.copyfile(config, workdir / "config.json")
     shutil.copyfile(image_path, workdir / "input_images" / image_path.name)
 
-    if not has_new_api():
-        # 旧版 main.py 按 cwd 找同级的步骤脚本
-        for name in LEGACY_SCRIPTS:
-            shutil.copyfile(PROJECT_ROOT / name, workdir / name)
-
-    env = dict(os.environ)
-    # 旧的扁平布局下，流水线脚本靠 cwd 找同级模块
-    env["PYTHONPATH"] = os.pathsep.join([str(PROJECT_ROOT), env.get("PYTHONPATH", "")]).rstrip(
-        os.pathsep
-    )
-
     proc = subprocess.run(
-        _command(workdir),
+        [sys.executable, "-m", "pixelmatic", "convert"],
         cwd=str(workdir),
-        env=env,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -101,7 +65,6 @@ def dump_blocks(litematic_path: Path) -> str:
 
     只取方块内容，不含时间戳等元信息 —— 这样比对的是"作品"而不是"文件字节"。
     """
-    sys.path.insert(0, str(PROJECT_ROOT))
     from litemapy import Schematic
 
     schem = Schematic.load(str(litematic_path))

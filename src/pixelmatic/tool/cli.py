@@ -2,18 +2,19 @@
 
 网页前端（默认）::
 
-    python -m mcyqqs.tool
+    python -m pixelmatic.tool
 
 命令行批量转换::
 
-    python -m mcyqqs.tool --cli
-    python -m mcyqqs.tool --cli --target y --rotation 90
-    python -m mcyqqs.tool --cli --replace red_concrete=red_terracotta
+    python -m pixelmatic.tool --cli
+    python -m pixelmatic.tool --cli --target y --rotation 90
+    python -m pixelmatic.tool --cli --replace red_concrete=red_terracotta
 """
 
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import threading
 import webbrowser
@@ -24,26 +25,34 @@ from ..litematic.core import (
     resolve_output_path,
     transform_file,
 )
-from . import PROJECT_ROOT, SETTINGS_FILENAME, resolve_path
+from . import resolve_path
 from .server import _load_tool_settings, serve
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 
 
-def parse_args(argv=None):
+def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
+    """构造工具自己的参数解析器。
+
+    这个解析器同时被 ``pixelmatic tool``（作为父解析器复用，``add_help=False``，
+    否则 -h 会和子命令自己的冲突）和 ``python -m pixelmatic.tool``（独立使用）共用。
+    """
     parser = argparse.ArgumentParser(
-        prog="mcyqqs.tool",
+        prog="pixelmatic.tool",
         description="Litematic 方向转换与方块替换工具。",
+        add_help=add_help,
     )
     parser.add_argument("--cli", action="store_true", help="不启动网页，直接命令行批量转换。")
     parser.add_argument("--host", default=DEFAULT_HOST, help="网页监听地址。")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="网页监听端口。")
     parser.add_argument("--no-browser", action="store_true", help="启动后不自动打开浏览器。")
     parser.add_argument(
+        # default=SUPPRESS：被 ``pixelmatic tool`` 当父解析器复用时，
+        # 不给 --config 就不要碰顶层已经解析出来的值（否则会把顶层的 --config 冲掉）
         "--config",
-        default=None,
-        help="配置文件路径（默认 config.json 的 tool 节；也可以指向旧版的 litematic_tool.json）。",
+        default=argparse.SUPPRESS,
+        help="配置文件路径（读它的 tool 节当默认值；也可以指向旧版的 litematic_tool.json）。",
     )
 
     parser.add_argument("--input", help="输入目录，覆盖配置。")
@@ -71,10 +80,14 @@ def parse_args(argv=None):
     )
     parser.add_argument("--suffix", help="输出文件名后缀。")
     parser.add_argument("--keep-properties", action="store_true", help="替换时保留方块属性。")
-    return parser.parse_args(argv)
+    return parser
 
 
-def build_plan(args, base: dict) -> TransformPlan:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    return build_parser().parse_args(argv)
+
+
+def build_plan(args: argparse.Namespace, base: dict) -> TransformPlan:
     """用命令行参数覆盖配置里的方向参数。"""
     plan = TransformPlan.from_dict(base)
     if args.source:
@@ -107,10 +120,10 @@ def parse_replace_rules(items: list[str]) -> dict[str, str]:
     return rules
 
 
-def run_cli(args) -> int:
+def run_cli(args: argparse.Namespace) -> int:
     """命令行批量转换输入目录里的全部投影文件。"""
-    config_path = args.config or str(PROJECT_ROOT / SETTINGS_FILENAME)
-    settings = _load_tool_settings(config_path)
+    # --config 用了 SUPPRESS 默认值，没传时命名空间里没有这个属性
+    settings = _load_tool_settings(getattr(args, "config", None))
 
     input_dir = resolve_path(args.input or settings.get("input_dir", ""))
     output_dir = resolve_path(args.output or settings.get("output_dir", ""))
@@ -157,19 +170,22 @@ def run_cli(args) -> int:
     return 1 if failed else 0
 
 
-def run_server(args) -> int:
-    """启动本地网页前端。"""
+def run_server(args: argparse.Namespace) -> int:
+    """启动本地网页前端（启动横幅由 ``serve()`` 打印实际绑定地址）。"""
     url = f"http://{args.host}:{args.port}/"
-    print(f"Litematic 工具: {url}")
-    print("按 Ctrl+C 结束。")
     if not args.no_browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    serve(args.host, args.port, args.config)
+    serve(args.host, args.port, getattr(args, "config", None))
     return 0
 
 
-def main(argv=None) -> int:
-    args = parse_args(argv)
+def run(args: argparse.Namespace) -> int:
+    """按解析好的参数分派到批量转换或网页服务。"""
     if args.cli:
         return run_cli(args)
     return run_server(args)
+
+
+def main(argv: list[str] | None = None) -> int:
+    logging.basicConfig(level=logging.WARNING)
+    return run(parse_args(argv))

@@ -9,14 +9,12 @@ import cv2
 import numpy as np
 from skimage import color
 
-from ..config import AppConfig
-from ..matching.energy import build_palette_index, optimize_assignments
+from ..config import AppConfig, MatchParams
+from ..matching.energy import PaletteIndex, build_palette_index, optimize_assignments
 from ..matching.palette import palette_names, palette_rgb
 from .debug import write_grid_debug
-from .grid import GridInfo, GridOptions, aligned_crop, iter_cells, read_image, save_png
-
-#: CSV 的表头，读取和写入共用一个定义
-CSV_HEADER = ("x", "y", "block")
+from .grid import aligned_crop, grid_options, iter_cells, read_image, save_png
+from .postprocess import write_cells
 
 
 @dataclass
@@ -28,7 +26,6 @@ class MatchResult:
     preview_path: Path | None = None
     cells: int = 0
     error: str | None = None
-    info: GridInfo | None = None
 
 
 def mean_colors(crop: np.ndarray, block: int, margin: int) -> tuple[np.ndarray, np.ndarray]:
@@ -54,24 +51,12 @@ def mean_colors(crop: np.ndarray, block: int, margin: int) -> tuple[np.ndarray, 
     return mean_grid, pixel_count_grid
 
 
-def write_csv(path: Path, rows: list[tuple[int, int, str]]) -> None:
-    """写方块清单（x, y, block）。
-
-    换行固定用 ``\\n``，不跟随平台 —— 这样同一张图在任何系统上产出的文件都一样。
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", newline="\n", encoding="utf-8-sig") as f:
-        f.write(",".join(CSV_HEADER) + "\n")
-        for x, y, block in rows:
-            f.write(f"{x},{y},{block}\n")
-
-
 def process_image(
     config: AppConfig,
     img_path: Path,
     block_size: int,
-    params,
-    palette=None,
+    params: MatchParams,
+    palette: PaletteIndex | None = None,
 ) -> MatchResult:
     """匹配一张图片，产出 CSV 与预览图。"""
     result = MatchResult(image=img_path.name)
@@ -80,16 +65,9 @@ def process_image(
         result.error = "图片读取失败"
         return result
 
-    options = GridOptions(
-        block_size=block_size,
-        min_block=config.grid.min_block,
-        center_ratio=config.grid.center_ratio,
-        smooth_window=config.grid.smooth_window,
-        shift_radius=config.grid.shift_radius,
-    )
+    options = grid_options(config, block_size)
     crop, info = aligned_crop(img, options, img_name=img_path.name)
     write_grid_debug(config.paths.debug_dir, info)
-    result.info = info
     if crop is None:
         result.error = "没能对齐出完整网格"
         return result
@@ -131,7 +109,7 @@ def process_image(
         result.error = f"预览图保存失败: {preview_path}"
 
     csv_path = config.paths.output_csv / f"{stem}.csv"
-    write_csv(csv_path, table)
+    write_cells(csv_path, table)
 
     result.csv_path = csv_path
     result.preview_path = preview_path

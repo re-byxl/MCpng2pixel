@@ -1,5 +1,5 @@
 [project]
-name = "mcyqqs"
+name = "pixelmatic"
 version = "0.2.0"
 description = "把图片转换成 Minecraft 方块投影，并做方向转换、方块替换与投稿产物生成"
 readme = "README.md"
@@ -14,10 +14,10 @@ dependencies = [
 ]
 
 [project.scripts]
-mcyqqs = "mcyqqs.cli:main"
+pixelmatic = "pixelmatic.cli:main"
 
 [project.urls]
-Repository = "https://github.com/re-byxl/MCpng2pixel"
+Repository = "https://github.com/re-byxl/pixelmatic"
 
 [dependency-groups]
 dev = [
@@ -36,7 +36,7 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = "src"
-module-name = "mcyqqs"
+module-name = "pixelmatic"
 
 [tool.ruff]
 line-length = 100

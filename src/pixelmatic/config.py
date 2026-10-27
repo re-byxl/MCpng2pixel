@@ -57,13 +57,16 @@ class GridConfig(BaseModel):
 
 
 class BluePenaltyConfig(BaseModel):
-    """蓝色系被误判成紫/粉时的惩罚。"""
+    """蓝色系被误判成紫/粉时的惩罚。
+
+    默认全部为 0（即不启用）—— 只有在结果里真的出现蓝被误判时才按需调高。
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    threshold_b: int = -15
-    penalty_purple: int = 25
-    penalty_pink: int = 20
+    threshold_b: int = 0
+    penalty_purple: int = 0
+    penalty_pink: int = 0
 
 
 class NeutralMaskConfig(BaseModel):

@@ -1,6 +1,6 @@
 """匹配模式（目标函数的参数预设）。
 
-每种模式就是一组 :class:`~mcyqqs.config.MatchParams`。
+每种模式就是一组 :class:`~pixelmatic.config.MatchParams`。
 参数有 schema 校验，缺 key 会在加载时就报错，而不是在跑到一半时 KeyError。
 """
 

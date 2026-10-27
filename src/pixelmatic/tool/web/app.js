@@ -68,6 +68,7 @@ async function loadState() {
   $("#keep-props").checked = !!data.settings.keep_properties;
 
   applyPlanToUI(data.settings.plan || {});
+  fillBlockList();
   renderRules(data.settings.replacements || {});
   renderFiles();
 
@@ -294,7 +295,8 @@ function collectRules() {
 }
 
 function fillBlockList() {
-  if ($("#block-list")) return;
+  // 重建 <datalist>，保证 renderRules 造出的输入框立刻能挂上自动补全
+  $("#block-list")?.remove();
   const list = document.createElement("datalist");
   list.id = "block-list";
   state.blocks.forEach((name) => {
@@ -323,7 +325,7 @@ async function saveSettings() {
   try {
     const data = await post("/api/settings", payload);
     state.settings = data.settings;
-    log("设置已保存到 config.json 的 tool 节");
+    log("设置已保存到本地状态文件（.pixelmatic/tool_state.json），不会改动 config.json");
   } catch (err) {
     log(`保存失败：${err.message}`);
   }
@@ -389,7 +391,8 @@ function pollJob(jobId) {
     } catch (err) {
       clearInterval(state.jobTimer);
       $("#btn-run").disabled = false;
-      log(`读取进度失败：${err.message}`);
+      // 保留已有任务日志，只在后面追加错误
+      log(`读取进度失败：${err.message}`, true);
     }
   }, 400);
 }
@@ -403,7 +406,7 @@ function bind() {
   $("#btn-run").addEventListener("click", runTransform);
 
   $("#btn-refresh").addEventListener("click", async () => {
-    await saveSettings();
+    // 只重新读状态，不隐式保存 —— 「刷新」不该偷偷把输入框写进配置
     await loadState();
     log("已刷新文件列表");
   });
@@ -455,7 +458,6 @@ function bind() {
   bind();
   try {
     await loadState();
-    fillBlockList();
     applyUrlOverrides();
     log("就绪。左侧勾选文件，右侧调整方向与替换规则，然后点「开始处理」。");
   } catch (err) {

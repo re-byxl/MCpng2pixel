@@ -32,6 +32,8 @@ def read_cells(csv_path: str | Path) -> list[tuple[int, int, str]]:
 
 def write_cells(csv_path: str | Path, cells: list[tuple[int, int, str]]) -> None:
     """写方块清单（换行固定用 ``\\n``，不跟随平台）。"""
+    csv_path = Path(csv_path)
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
     with open(csv_path, "w", newline="\n", encoding="utf-8-sig") as f:
         f.write(",".join(CSV_HEADER) + "\n")
         for x, y, block in cells:

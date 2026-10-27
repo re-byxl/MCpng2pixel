@@ -2,4 +2,4 @@
 
 from __future__ import annotations
 
-__all__ = ["color", "debug", "export", "grid", "match", "postprocess"]
+__all__ = ["debug", "export", "grid", "match", "postprocess"]

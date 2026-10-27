@@ -1,4 +1,4 @@
-"""``python -m mcyqqs`` 的入口。"""
+"""``python -m pixelmatic`` 的入口。"""
 
 from __future__ import annotations
 

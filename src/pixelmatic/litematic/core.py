@@ -22,6 +22,7 @@ Minecraft 是右手系：+X 向东，+Y 向上，+Z 向南。
 from __future__ import annotations
 
 import csv
+import logging
 import os
 import zlib
 from collections.abc import Sequence
@@ -31,6 +32,8 @@ from litemapy import BlockState, Entity, Region, Schematic, TileEntity
 from nbtlib.tag import Compound, Double, Int, List
 
 from ..matching.palette import MC_BLOCKS
+
+logger = logging.getLogger(__name__)
 
 Vector = tuple[int, int, int]
 Matrix = tuple[Vector, Vector, Vector]
@@ -306,11 +309,12 @@ def apply_replacement(
         props = dict(block.properties())
         try:
             return BlockState(target_id, **props)
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("带属性替换失败，回退为无属性 %s: %s", target_id, exc)
     try:
         return BlockState(target_id)
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("无法构造目标方块 %s，保留原方块 %s: %s", target_id, block_id, exc)
         return block
 
 
@@ -344,6 +348,26 @@ def load_region(path: str) -> tuple[Region, str]:
     return schem.regions[name], "litematic"
 
 
+def cells_to_region(cells: list[tuple[int, int, str]]) -> Region:
+    """把 ``x,y,block`` 清单变成一个 1 层厚的立面区域。
+
+    CSV 的 ``y`` 以图片顶部为 0，Minecraft 的 Y 轴向上，所以行号要翻转：
+    ``y_mc = max_y - 1 - y``。流水线导出（``pipeline.export``）与这里的
+    坐标约定完全一致，共用本函数。
+    """
+    if not cells:
+        raise ValueError("清单里没有方块数据")
+
+    max_x = max(c[0] for c in cells) + 1
+    max_y = max(c[1] for c in cells) + 1
+
+    region = Region(0, 0, 0, max_x, max_y, 1)
+    for x, y, name in cells:
+        block_id = name if ":" in name else "minecraft:" + name
+        region[x, max_y - 1 - y, 0] = BlockState(block_id)
+    return region
+
+
 def load_csv_region(csv_path: str) -> Region:
     """读取 ``x,y,block`` 清单并生成 1 层厚的立面区域。"""
     cells: list[tuple[int, int, str]] = []
@@ -358,14 +382,7 @@ def load_csv_region(csv_path: str) -> Region:
     if not cells:
         raise ValueError(f"CSV 里没有方块数据: {csv_path}")
 
-    max_x = max(c[0] for c in cells) + 1
-    max_y = max(c[1] for c in cells) + 1
-
-    region = Region(0, 0, 0, max_x, max_y, 1)
-    for x, y, name in cells:
-        block_id = name if ":" in name else "minecraft:" + name
-        region[x, max_y - 1 - y, 0] = BlockState(block_id)
-    return region
+    return cells_to_region(cells)
 
 
 def _store_axes(region: Region) -> list[list[tuple[int, int]]]:
@@ -692,9 +709,7 @@ def preview_payload(region: Region, normal_axis: str | None = None) -> dict:
     return data
 
 
-def preview_file(
-    path: str, plan: TransformPlan, view: str = "both", replacements: dict | None = None
-) -> dict:
+def preview_file(path: str, plan: TransformPlan, replacements: dict | None = None) -> dict:
     """生成单个文件转换前 / 后的预览数据。"""
     region, kind = load_region(path)
     before = preview_payload(region)

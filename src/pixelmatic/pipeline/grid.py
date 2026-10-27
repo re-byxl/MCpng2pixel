@@ -8,10 +8,17 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
+
+if TYPE_CHECKING:
+    from ..config import AppConfig
+
+logger = logging.getLogger(__name__)
 
 #: Canny 边缘检测阈值（沿用原实现）
 CANNY_LOW = 50
@@ -30,6 +37,17 @@ class GridOptions:
     center_ratio: float = 0.45
     smooth_window: int = 9
     shift_radius: int = 4
+
+
+def grid_options(config: AppConfig, block_size: int) -> GridOptions:
+    """从配置拼出网格检测参数（pipeline 各 stage 共用这一个入口）。"""
+    return GridOptions(
+        block_size=block_size,
+        min_block=config.grid.min_block,
+        center_ratio=config.grid.center_ratio,
+        smooth_window=config.grid.smooth_window,
+        shift_radius=config.grid.shift_radius,
+    )
 
 
 @dataclass
@@ -61,6 +79,10 @@ def read_image(path: str) -> np.ndarray | None:
         img = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
         if img is None:
             return None
+        if img.ndim == 2:
+            # 灰度图没有第三个维度，直接访问 shape[2] 会 IndexError；
+            # 统一转成三通道再往下走
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
         if img.shape[2] == 4:
             alpha = img[:, :, 3]
             mask = alpha > 10
@@ -70,7 +92,7 @@ def read_image(path: str) -> np.ndarray | None:
             img = cv2.bitwise_and(img, img, mask=mask.astype(np.uint8) * 255)
         return img
     except Exception as exc:  # noqa: BLE001
-        print(f"  [ERR] 读取异常: {path}, 错误: {exc}")
+        logger.error("读取图片异常: %s (%s)", path, exc)
         return None
 
 
@@ -93,7 +115,7 @@ def _encode(path: str, img: np.ndarray, ext: str | None = None) -> bool:
             return True
         return False
     except Exception as exc:  # noqa: BLE001
-        print(f"  [ERR] 保存失败: {path}, 错误: {exc}")
+        logger.error("保存图片失败: %s (%s)", path, exc)
         return False
 
 

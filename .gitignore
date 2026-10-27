@@ -47,11 +47,15 @@ data/
 output/
 debug/
 TODO/
-input_images/
+input_images/*
+!input_images/README.md
 
 # Litematic 工具的输入投影文件
 input_litematic/*.litematic
 input_litematic/*.csv
+
+# 网页工具的本地运行时状态（机器各自一份，不进版本库）
+.pixelmatic/
 
 # 调色板提取工具的中间产物
 extract_output/

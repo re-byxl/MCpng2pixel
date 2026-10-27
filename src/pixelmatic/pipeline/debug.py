@@ -13,7 +13,7 @@ import numpy as np
 from skimage import color
 
 from ..config import AppConfig
-from .grid import GridInfo, GridOptions, aligned_crop, iter_cells, read_image, save_image
+from .grid import GridInfo, aligned_crop, grid_options, read_image, save_image
 
 
 def write_grid_debug(debug_dir: Path, info: GridInfo) -> Path:
@@ -36,17 +36,6 @@ def write_grid_debug(debug_dir: Path, info: GridInfo) -> Path:
             f"上{info.discarded_top} 下{info.discarded_bottom}\n"
         )
     return path
-
-
-def grid_options(config: AppConfig, block_size: int) -> GridOptions:
-    """从配置拼出网格检测参数。"""
-    return GridOptions(
-        block_size=block_size,
-        min_block=config.grid.min_block,
-        center_ratio=config.grid.center_ratio,
-        smooth_window=config.grid.smooth_window,
-        shift_radius=config.grid.shift_radius,
-    )
 
 
 def draw_grid(img: np.ndarray, block: int) -> np.ndarray:
@@ -110,17 +99,15 @@ def render_color_preview(config: AppConfig, img_path: Path, block_size: int) -> 
     if crop is None:
         return None
 
-    margin = config.cell.margin
-    lab = color.rgb2lab(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB) / 255.0)
-    preview = np.zeros_like(crop)
+    # 取色逻辑与主流程共用 mean_colors，避免两处各维护一份逐格均值
+    # （延迟导入：match.py 也 import 本模块的 write_grid_debug，模块级导入会成环）
+    from .match import mean_colors
 
-    for _, _, x0, y0, x1, y1 in iter_cells(crop, block_size):
-        inner = lab[y0 + margin : y1 - margin, x0 + margin : x1 - margin]
-        if inner.size == 0:
-            continue
-        mean_lab = inner.mean(axis=(0, 1))
-        rgb_mean = color.lab2rgb(mean_lab.reshape(1, 1, 3))[0, 0] * 255
-        preview[y0:y1, x0:x1] = rgb_mean
+    mean_grid, _ = mean_colors(crop, block_size, config.cell.margin)
+    rgb = color.lab2rgb(mean_grid)  # (ny, nx, 3)，逐像素独立变换；空格子 Lab=0 → 黑
+    rgb = np.repeat(np.repeat(rgb, block_size, axis=0), block_size, axis=1)
+    preview = np.zeros_like(crop)
+    preview[: rgb.shape[0], : rgb.shape[1]] = rgb * 255
 
     out_bgr = cv2.cvtColor(preview, cv2.COLOR_RGB2BGR)
     out_path = config.paths.color_debug / img_path.name

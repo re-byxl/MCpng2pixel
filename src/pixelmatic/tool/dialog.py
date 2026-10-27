@@ -1,7 +1,7 @@
 """在服务器端弹出系统目录选择框。
 
 单独作为进程运行，避免在 HTTP 服务线程里调用 Tk 引发的问题。
-用法：``python -m mcyqqs.tool.dialog <起始目录>``
+用法：``python -m pixelmatic.tool.dialog <起始目录>``
 选中的路径打印到标准输出。
 """
 
@@ -29,6 +29,8 @@ def main() -> int:
     root.destroy()
 
     if path:
+        # stdout 是与 server.py 之间的 IPC 协议通道（server 起子进程读 stdout 拿路径），
+        # 必须用 print，不能改成 logging
         print(path)
     return 0
 

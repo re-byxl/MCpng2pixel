@@ -4,6 +4,9 @@
 
     python tests/generate_baseline.py
 
+基线用的是 ``tests/golden/config.json`` 这份固定配置（不随仓库根目录的
+config.json 变动）。
+
 只有在**明确知道自己在改流水线行为**的时候才应该跑这个脚本 ——
 它会覆盖 tests/golden/ 下的期望文件，让测试重新变绿。
 """

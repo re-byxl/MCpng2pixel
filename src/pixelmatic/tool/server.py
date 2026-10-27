@@ -1,8 +1,8 @@
 """本地网页前端所用的 HTTP 服务。
 
-只用标准库实现，前端是 ``mcyqqs/tool/web/`` 下的静态页面。
+只用标准库实现，前端是 ``pixelmatic/tool/web/`` 下的静态页面。
 
-纯领域逻辑（变换、投影、预览）都在 :mod:`mcyqqs.litematic.core` 里，
+纯领域逻辑（变换、投影、预览）都在 :mod:`pixelmatic.litematic.core` 里，
 这个模块只负责 HTTP 层的收发和 JSON 组装。
 """
 
@@ -32,7 +32,7 @@ from ..litematic.core import (
 from ..matching.palette import MC_BLOCKS
 from . import PROJECT_ROOT, SETTINGS_FILENAME, resolve_path
 
-#: ``src`` 目录的绝对路径（源码方式运行时让子进程也能 import 到 mcyqqs）
+#: ``src`` 目录的绝对路径（源码方式运行时让子进程也能 import 到 pixelmatic）
 SRC_ROOT = str(Path(__file__).resolve().parents[2])
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
@@ -92,15 +92,24 @@ KNOWN_SETTING_KEYS = (
     "replacements",
 )
 
-#: 当前使用的配置文件路径
-_settings_path: Path = Path(PROJECT_ROOT) / SETTINGS_FILENAME
-
 #: 旧版的工具配置文件名（``tool`` 节还没并进 config.json 时用）
 LEGACY_SETTINGS_FILENAME = "litematic_tool.json"
 
+#: 运行时状态目录 / 状态文件（机器本地，不进版本库）
+STATE_DIRNAME = ".pixelmatic"
+STATE_FILENAME = "tool_state.json"
+
+#: 当前使用的配置文件路径（工具配置的「出厂默认」来自它的 ``tool`` 节）
+_config_path: Path = Path(PROJECT_ROOT) / SETTINGS_FILENAME
+
+
+def _state_file_path() -> Path:
+    """工具运行时状态文件的位置。"""
+    return Path(PROJECT_ROOT) / STATE_DIRNAME / STATE_FILENAME
+
 
 def _read_raw_settings(path: Path) -> dict:
-    """读一个配置文件，返回原始 dict（读不到 / 坏了就空 dict）。"""
+    """读一个 JSON 文件，返回原始 dict（读不到 / 坏了就空 dict）。"""
     if not path.exists():
         return {}
     try:
@@ -117,42 +126,39 @@ def _is_legacy_settings(raw: dict) -> bool:
     return any(key in raw for key in KNOWN_SETTING_KEYS)
 
 
-def _tool_settings_from_raw(raw: dict) -> dict:
-    """把旧版扁平配置整理成工具配置（纯 dict）。"""
-    defaults = _default_tool_settings()
-    merged = dict(defaults)
-    merged.update({key: raw[key] for key in KNOWN_SETTING_KEYS if key in raw})
-    merged["plan"] = TransformPlan.from_dict(
-        {**defaults["plan"], **(merged.get("plan") or {})}
-    ).to_dict()
+def _merge_settings(base: dict, overlay: dict) -> dict:
+    """把 ``overlay`` 里的已知字段盖到 ``base`` 上（``plan`` 逐键合并）。"""
+    merged = dict(base)
+    for key in KNOWN_SETTING_KEYS:
+        if key in overlay:
+            merged[key] = overlay[key]
+
+    plan_overlay = merged.get("plan")
+    if not isinstance(plan_overlay, dict):
+        plan_overlay = {}
+    merged["plan"] = TransformPlan.from_dict({**base["plan"], **plan_overlay}).to_dict()
+
     if not isinstance(merged.get("replacements"), dict):
-        merged["replacements"] = dict(defaults["replacements"])
+        merged["replacements"] = dict(base.get("replacements") or {})
     return merged
 
 
-def _load_tool_settings(path: str | Path | None = None) -> dict:
-    """读取工具配置。
-
-    默认读 ``config.json`` 的 ``tool`` 节；旧版扁平的 ``litematic_tool.json``
-    也照样认 —— 显式把路径传进来时按旧格式读，默认路径下如果 config.json
-    里没有 ``tool`` 节就自动回退到旧文件。
-
-    返回的是纯 dict（和前端 / 命令行期望的形状一致）。
-    """
-    target = Path(path) if path else _settings_path
+def _tool_settings_from_config(config_path: str | Path | None) -> dict:
+    """配置层默认值：config.json 的 ``tool`` 节 → 旧版扁平文件 → 内置默认。"""
+    target = Path(config_path) if config_path else _config_path
 
     raw = _read_raw_settings(target)
     if _is_legacy_settings(raw):
-        return _tool_settings_from_raw(raw)
+        return _merge_settings(_default_tool_settings(), raw)
 
-    if path is None:
+    if config_path is None:
         legacy_raw = _read_raw_settings(Path(PROJECT_ROOT) / LEGACY_SETTINGS_FILENAME)
         if _is_legacy_settings(legacy_raw):
-            return _tool_settings_from_raw(legacy_raw)
-
-    from ..config import AppConfig, load_config
+            return _merge_settings(_default_tool_settings(), legacy_raw)
 
     try:
+        from ..config import AppConfig, load_config
+
         config = load_config(target)
     except Exception:
         config = AppConfig()
@@ -169,38 +175,45 @@ def _load_tool_settings(path: str | Path | None = None) -> dict:
     }
 
 
-def _save_tool_settings(data: dict, path: str | Path | None = None) -> None:
-    """保存工具配置（原子写入）。
+def _load_tool_settings(config_path: str | Path | None = None) -> dict:
+    """读取工具配置：状态文件盖在配置层之上。
 
-    目标是新配置就写回 ``config.json`` 的 ``tool`` 节；
-    目标是旧版扁平文件就按旧格式整体替换。
+    配置层（config.json 的 ``tool`` 节）只当「出厂默认」读；
+    网页工具保存的运行时状态在 ``.pixelmatic/tool_state.json`` 里，
+    删掉它就回到配置层默认。返回纯 dict（前端 / 命令行期望的形状）。
     """
-    target = Path(path) if path else _settings_path
+    merged = _tool_settings_from_config(config_path)
+    state = _read_raw_settings(_state_file_path())
+    if _is_legacy_settings(state):
+        merged = _merge_settings(merged, state)
+    return merged
 
-    defaults = _default_tool_settings()
-    merged = {key: (data or {}).get(key, defaults[key]) for key in KNOWN_SETTING_KEYS}
-    merged["plan"] = TransformPlan.from_dict(
-        {**defaults["plan"], **(merged.get("plan") or {})}
-    ).to_dict()
-    if not isinstance(merged.get("replacements"), dict):
-        merged["replacements"] = {}
 
-    if _is_legacy_settings(_read_raw_settings(target)):
-        target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_suffix(target.suffix + ".tmp")
-        tmp.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(target)
-        return
-
-    from ..config import AppConfig, ToolConfig, load_config, save_config
-
+def _relativize(path_text: str) -> str:
+    """项目根目录内的绝对路径改存相对路径，状态文件不绑死在某台机器上。"""
+    full = Path(os.path.normpath(path_text))
+    root = Path(os.path.normpath(str(PROJECT_ROOT)))
     try:
-        config = load_config(target)
-    except Exception:
-        config = AppConfig()
+        return str(full.relative_to(root))
+    except ValueError:
+        return str(full)
 
-    config.tool = ToolConfig.model_validate(merged)
-    save_config(config, target)
+
+def _save_tool_settings(data: dict, config_path: str | Path | None = None) -> None:
+    """把工具配置写进状态文件（原子写入）。
+
+    **绝不写 config.json** —— 配置文件只当出厂默认读。
+    没提供的字段沿用当前值；项目根目录内的路径改存相对路径。
+    """
+    merged = _merge_settings(_load_tool_settings(config_path), data or {})
+    merged["input_dir"] = _relativize(str(merged["input_dir"]))
+    merged["output_dir"] = _relativize(str(merged["output_dir"]))
+
+    target = _state_file_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    tmp.write_text(json.dumps(merged, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(target)
 
 
 #: 当前生效的工具配置（模块级）
@@ -268,10 +281,10 @@ class JobManager:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "LitematicTool/1.0"
+    server_version = "pixelmatic/0.2.0"
 
     # 由 create_server 注入
-    settings_path: Path
+    config_path: Path
     jobs: JobManager
 
     # ------------------------------------------------------------------ #
@@ -303,19 +316,38 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _read_json(self) -> dict:
+        """读请求体并解析 JSON；不合法直接抛 ValueError（路由层转成 400）。"""
         length = int(self.headers.get("Content-Length") or 0)
         if not length:
             return {}
         raw = self.rfile.read(length)
         try:
             data = json.loads(raw.decode("utf-8"))
-        except Exception:
-            return {}
-        return data if isinstance(data, dict) else {}
+        except Exception as exc:
+            raise ValueError("请求体不是合法的 JSON") from exc
+        if not isinstance(data, dict):
+            raise ValueError("请求体必须是 JSON 对象")
+        return data
 
     # ------------------------------------------------------------------ #
 
+    def _host_allowed(self) -> bool:
+        """只认本机回环地址的 Host 头，挡掉 DNS 重绑定之类的跨域访问。"""
+        host = (self.headers.get("Host") or "").strip().lower()
+        address = self.server.server_address
+        port = address[1] if isinstance(address, tuple) else 0
+        return host in {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
+
     def do_GET(self) -> None:
+        if not self._host_allowed():
+            self._send_json({"error": "拒绝访问"}, 403)
+            return
+        try:
+            self._route_get()
+        except Exception as exc:  # noqa: BLE001
+            self._send_json({"error": f"{exc}", "trace": traceback.format_exc()}, 500)
+
+    def _route_get(self) -> None:
         parsed = urlparse(self.path)
         route = parsed.path
         query = parse_qs(parsed.query)
@@ -337,22 +369,35 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"error": "not found"}, 404)
 
     def do_POST(self) -> None:
-        route = urlparse(self.path).path
+        if not self._host_allowed():
+            self._send_json({"error": "拒绝访问"}, 403)
+            return
+        # 前端 api() 统一发 application/json；别的类型一律挡掉
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if ctype != "application/json":
+            self._send_json({"error": "Content-Type 必须是 application/json"}, 400)
+            return
         try:
-            if route == "/api/settings":
-                self._handle_save_settings()
-            elif route == "/api/preview":
-                self._handle_preview()
-            elif route == "/api/transform":
-                self._handle_transform()
-            elif route == "/api/browse":
-                self._handle_browse()
-            elif route == "/api/open_folder":
-                self._handle_open_folder()
-            else:
-                self._send_json({"error": "not found"}, 404)
-        except Exception as exc:
+            self._route_post()
+        except ValueError as exc:
+            self._send_json({"error": f"{exc}"}, 400)
+        except Exception as exc:  # noqa: BLE001
             self._send_json({"error": f"{exc}", "trace": traceback.format_exc()}, 500)
+
+    def _route_post(self) -> None:
+        route = urlparse(self.path).path
+        if route == "/api/settings":
+            self._handle_save_settings()
+        elif route == "/api/preview":
+            self._handle_preview()
+        elif route == "/api/transform":
+            self._handle_transform()
+        elif route == "/api/browse":
+            self._handle_browse()
+        elif route == "/api/open_folder":
+            self._handle_open_folder()
+        else:
+            self._send_json({"error": "not found"}, 404)
 
     # ------------------------------------------------------------------ #
 
@@ -386,7 +431,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_save_settings(self) -> None:
         data = self._read_json()
-        _save_tool_settings(data, self.settings_path)
+        _save_tool_settings(data, self.config_path)
         saved = current_settings()
         self._send_json({"settings": saved})
 
@@ -409,7 +454,7 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(replacements, dict):
             replacements = config.get("replacements", {})
 
-        payload = preview_file(path, plan, str(data.get("view") or "both"), replacements)
+        payload = preview_file(path, plan, replacements)
         payload["file"] = name
         self._send_json(payload)
 
@@ -438,7 +483,14 @@ class Handler(BaseHTTPRequestHandler):
             used: set[str] = set()
             try:
                 os.makedirs(output_dir, exist_ok=True)
-                for name in names:
+            except Exception as exc:  # noqa: BLE001
+                job.status = "error"
+                job.write(f"[错误] 无法创建输出目录: {exc}")
+                return
+
+            for name in names:
+                # 单个文件失败只记日志，不拖垮整批任务
+                try:
                     path = os.path.normpath(os.path.join(input_dir, str(name)))
                     if not _is_inside(path, input_dir):
                         job.write(f"[跳过] 非法路径: {name}")
@@ -463,12 +515,12 @@ class Handler(BaseHTTPRequestHandler):
                             f"{dims[0]}x{dims[1]}x{dims[2]}（{region['blocks']} 方块）"
                         )
                     job.results.append(summary)
-                job.status = "done"
-                job.write("[完成] 全部处理结束")
-            except Exception as exc:
-                job.status = "error"
-                job.write(f"[错误] {exc}")
-                job.write(traceback.format_exc())
+                except Exception as exc:  # noqa: BLE001
+                    job.write(f"[失败] {name}: {exc}")
+                    job.write(traceback.format_exc())
+
+            job.status = "done"
+            job.write("[完成] 全部处理结束")
 
         threading.Thread(target=run, daemon=True).start()
         self._send_json({"job": job.id})
@@ -484,7 +536,7 @@ class Handler(BaseHTTPRequestHandler):
                 paths.append(env["PYTHONPATH"])
             env["PYTHONPATH"] = os.pathsep.join(paths)
             proc = subprocess.run(
-                [sys.executable, "-m", "mcyqqs.tool.dialog", start],
+                [sys.executable, "-m", "pixelmatic.tool.dialog", start],
                 cwd=str(PROJECT_ROOT),
                 capture_output=True,
                 text=True,
@@ -536,21 +588,19 @@ def _is_inside(path: str, parent: str) -> bool:
 
 
 def create_server(
-    host: str = "127.0.0.1", port: int = 8765, settings_path: str | None = None
+    host: str = "127.0.0.1", port: int = 8765, config_path: str | None = None
 ) -> ThreadingHTTPServer:
     """创建（但不启动）HTTP 服务。"""
-    global _settings_path
+    global _config_path
 
-    _settings_path = (
-        Path(settings_path) if settings_path else Path(PROJECT_ROOT) / SETTINGS_FILENAME
-    )
-    Handler.settings_path = _settings_path
+    _config_path = Path(config_path) if config_path else Path(PROJECT_ROOT) / SETTINGS_FILENAME
+    Handler.config_path = _config_path
     Handler.jobs = JobManager()
     return ThreadingHTTPServer((host, port), Handler)
 
 
-def serve(host: str = "127.0.0.1", port: int = 8765, settings_path: str | None = None) -> None:
-    httpd = create_server(host, port, settings_path)
+def serve(host: str = "127.0.0.1", port: int = 8765, config_path: str | None = None) -> None:
+    httpd = create_server(host, port, config_path)
     print(f"Litematic 工具已启动: http://{host}:{port}")
     print("按 Ctrl+C 结束。")
     try:

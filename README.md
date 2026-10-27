@@ -1,4 +1,4 @@
-# MCpng2pixel
+# pixelmatic
 
 把图片转换成 Minecraft 方块投影（`.litematic`），并提供方向转换、方块替换与投稿产物生成。
 
@@ -18,7 +18,7 @@ uv sync            # 装运行时依赖
 uv sync --dev      # 连测试、lint、类型检查工具一起装
 ```
 
-装完会有两个命令：`mcyqqs`（主命令）和 `python -m mcyqqs.tool`（方向转换工具）。
+装完会有两个命令：`pixelmatic`（主命令）和 `python -m pixelmatic.tool`（方向转换工具）。
 
 ---
 
@@ -27,19 +27,19 @@ uv sync --dev      # 连测试、lint、类型检查工具一起装
 ```bash
 # 1. 把图片放进 input_images/
 # 2. 转换
-mcyqqs convert
+pixelmatic convert
 
 # 只想看网格切得对不对
-mcyqqs debug grid
+pixelmatic debug grid
 
 # 每格取色的结果（方块匹配之前的"参考图"）
-mcyqqs debug color
+pixelmatic debug color
 
 # 方向转换工具的网页前端（默认 http://127.0.0.1:8765）
-mcyqqs tool
+pixelmatic tool
 ```
 
-`mcyqqs convert` 的产出：
+`pixelmatic convert` 的产出：
 
 ```
 output/
@@ -57,13 +57,12 @@ debug/
 ## 目录结构
 
 ```
-src/mcyqqs/                正式包（pip install 后可用）
+src/pixelmatic/                正式包（pip install 后可用）
   cli.py                   命令行入口：convert / debug / tool
   config.py                配置模型（唯一配置来源）
   pipeline/                图片流水线
     grid.py                网格检测与对齐
-    color.py               每格取色
-    match.py               方块匹配（读写 CSV 与预览图）
+    match.py               每格取色 + 方块匹配（产出 CSV 与预览图）
     postprocess.py         背景黑色清理
     export.py              CSV → .litematic
     debug.py               诊断视图
@@ -79,7 +78,7 @@ src/mcyqqs/                正式包（pip install 后可用）
     web/                   前端页面（无构建步骤）
 tests/                     pytest + 黄金样本回归
 tools/palette_extract.py   从材质图重新生成调色板
-config.json                唯一配置文件
+config.json                配置文件（工具的运行时状态另存 .pixelmatic/，不进版本库）
 ```
 
 ---
@@ -147,7 +146,7 @@ config.json                唯一配置文件
 ```
 
 配置由 pydantic 校验：**缺 key 或类型写错会直接报错**，不会静默回落到默认值。
-用别的配置文件：`mcyqqs --config my.json convert`。
+用别的配置文件：`pixelmatic --config my.json convert`。
 
 ### 基础配置
 
@@ -161,13 +160,14 @@ config.json                唯一配置文件
 
 ### 颜色惩罚 (blue_penalty)
 
-解决蓝色系被误判成紫/粉的问题。
+解决蓝色系被误判成紫/粉的问题。**默认全部为 0（即不启用）**，
+只有在结果里真的出现蓝被误判时才按需调高。
 
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
-| `threshold_b` | LAB 空间 b 通道阈值，低于此值认为是蓝色调 | -15 |
-| `penalty_purple` | 对紫色/品红方块的惩罚值 | 25 |
-| `penalty_pink` | 对粉色方块的惩罚值 | 20 |
+| `threshold_b` | LAB 空间 b 通道阈值，低于此值认为是蓝色调 | 0 |
+| `penalty_purple` | 对紫色/品红方块的惩罚值 | 0 |
+| `penalty_pink` | 对粉色方块的惩罚值 | 0 |
 
 **LAB 空间**：L 是亮度（0-100），a 是绿-红，b 是蓝-黄。
 
@@ -197,20 +197,20 @@ config.json                唯一配置文件
 | 3 | `pipeline/postprocess.py` | 背景黑色换成空气，保留前景黑色与 1 格描边 |
 | 4 | `pipeline/export.py` | CSV → `.litematic`（法线朝 Z 的立面） |
 
-阶段 1 和 2 里的调试图（`mcyqqs debug grid` / `mcyqqs debug color`）只是诊断视图，
+阶段 1 和 2 里的调试图（`pixelmatic debug grid` / `pixelmatic debug color`）只是诊断视图，
 不参与主流程的产出。
 
 ### 匹配模式
 
 | 模式 | 说明 |
 |------|------|
-| `quality` | 高质量，8 轮迭代（默认） |
-| `balanced` | 平衡，3 轮迭代 |
+| `quality` | 高质量，8 轮迭代 |
+| `balanced` | 平衡，3 轮迭代（默认） |
 | `color_priority` | 优先保留原图颜色 |
 | `contrast_priority` | 优先保留局部对比 |
 | `smooth_priority` | 优先整体平滑 |
 
-模式参数在 `src/mcyqqs/matching/modes.py`，每一项都有 pydantic 校验。
+模式参数在 `src/pixelmatic/matching/modes.py`，每一项都有 pydantic 校验。
 
 | 参数 | 说明 | 常用值范围 |
 |------|------|------------|
@@ -253,13 +253,17 @@ x,y,block
 把 `.litematic` 换个方向（墙面画 ↔ 地面平铺）、旋转、镜像，同时批量替换方块。
 
 ```bash
-mcyqqs tool                      # 网页前端
-mcyqqs tool --cli --target y     # 命令行批量转换
-mcyqqs tool --cli --target y --rotation 90 --replace red_concrete=red_terracotta
+pixelmatic tool                      # 网页前端
+pixelmatic tool --cli --target y     # 命令行批量转换
+pixelmatic tool --cli --target y --rotation 90 --replace red_concrete=red_terracotta
 ```
 
 输入目录默认 `input_litematic/`，输出默认 `output/litematic_transformed/`。
 也支持直接吃 `.csv` 清单（`x,y,block` 三列），会当成一张立面画处理。
+
+配置存在两个地方：`config.json` 的 `tool` 节是**出厂默认**；网页里点「保存」
+写入的运行时状态在 `.pixelmatic/tool_state.json`（本地文件，不进版本库），
+删掉它就回到出厂默认。
 
 ### 网页前端
 
@@ -302,16 +306,28 @@ Minecraft 是右手系（+X 东，+Y 上，+Z 南）。描述一个平面图案�
 uv sync --dev
 
 uv run pytest                      # 测试（含黄金样本回归）
-uv run pytest --cov=src/mcyqqs    # 带覆盖率
+uv run pytest --cov=src/pixelmatic    # 带覆盖率
 uv run ruff check .                # lint
 uv run ruff format .               # 格式化
 uv run mypy                        # 类型检查
 ```
 
+### 提交前检查
+
+四道门全绿再提交（CI 跑的也是这几条）：
+
+```bash
+uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest -q
+```
+
+想自动化的话可以装 [pre-commit](https://pre-commit.com) 挂 ruff 的官方 hook
+（`rev` 与 `pyproject.toml` 里的 ruff 版本对齐）。
+
 ### 黄金样本回归
 
-`tests/golden/` 里存着一张确定性生成的参考图和它的**期望输出**（CSV 与投影的逐格内容）。
-`tests/test_golden.py` 每次都会跑一遍完整流水线并逐字节比对。
+`tests/golden/` 里存着一张确定性生成的参考图、它的**期望输出**（CSV 与投影的逐格内容），
+以及跑基线用的固定配置 `tests/golden/config.json`（和仓库根目录的 `config.json` 解耦，
+改根配置不影响基线复现）。`tests/test_golden.py` 每次都会跑一遍完整流水线并逐字节比对。
 
 这是重构的安全网：**流水线行为一旦变了，测试就会红**。
 
@@ -323,7 +339,7 @@ uv run python tests/generate_baseline.py
 
 ### 重新生成调色板
 
-调色板是数据，存放在 `src/mcyqqs/matching/palette.json`。
+调色板是数据，存放在 `src/pixelmatic/matching/palette.json`。
 需要从材质图重新采样时：
 
 ```bash
@@ -338,7 +354,7 @@ uv run --with pandas --with scipy --with pillow python tools/palette_extract.py
 
 ### 调试流程
 
-1. `mcyqqs debug grid` 看网格切得对不对 —— 绿色线应该正好压在格子边界上
+1. `pixelmatic debug grid` 看网格切得对不对 —— 绿色线应该正好压在格子边界上
 2. 对比 `debug/color_preview/`（每格平均色）和 `output/preview/`（匹配结果）
    —— 前者正常、后者偏色，说明问题在匹配算法
 3. `debug/grid_debug.txt` 里有每次的网格锚点、格子数和丢弃的像素

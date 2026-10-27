@@ -1,4 +1,4 @@
-"""``mcyqqs`` 命令行入口。
+"""``pixelmatic`` 命令行入口。
 
 子命令：
 
@@ -10,13 +10,11 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
 from .config import AppConfig, load_config
-
-#: 顶层包里的模块在导入时不做任何副作用（不建目录、不读配置）
-COMMANDS = ("convert", "debug", "tool")
 
 IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg")
 
@@ -28,7 +26,7 @@ IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg")
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="mcyqqs",
+        prog="pixelmatic",
         description="把图片转换成 Minecraft 方块投影。",
     )
     parser.add_argument("--config", default=None, help="配置文件路径（默认 config.json）。")
@@ -50,26 +48,14 @@ def build_parser() -> argparse.ArgumentParser:
     debug.add_argument("--block-size", type=int, default=None, help="方块大小（像素）。")
     debug.add_argument("--input", default=None, help="输入图片目录，覆盖配置。")
 
-    tool = sub.add_parser("tool", help="方向转换与方块替换工具")
-    tool.add_argument("--cli", action="store_true", help="不启动网页，直接命令行批量转换。")
-    tool.add_argument("--host", default="127.0.0.1", help="网页监听地址。")
-    tool.add_argument("--port", type=int, default=8765, help="网页监听端口。")
-    tool.add_argument("--no-browser", action="store_true", help="启动后不自动打开浏览器。")
-    tool.add_argument("--input", default=None, help="输入目录，覆盖配置。")
-    tool.add_argument("--output", default=None, help="输出目录，覆盖配置。")
-    tool.add_argument("--target", choices=["keep", "x", "y", "z"], help="目标朝向。")
-    tool.add_argument("--source", choices=["auto", "x", "y", "z"], help="原图案所在平面。")
-    tool.add_argument("--rotation", type=int, choices=[0, 90, 180, 270], help="平面内旋转。")
-    tool.add_argument("--flip", action="store_true", help="水平镜像。")
-    tool.add_argument("--flip-v", action="store_true", help="垂直镜像。")
-    tool.add_argument("--rotate-x", type=int, choices=[0, 90, 180, 270], help="额外绕 X 旋转。")
-    tool.add_argument("--rotate-y", type=int, choices=[0, 90, 180, 270], help="额外绕 Y 旋转。")
-    tool.add_argument("--rotate-z", type=int, choices=[0, 90, 180, 270], help="额外绕 Z 旋转。")
-    tool.add_argument(
-        "--replace", action="append", default=[], metavar="旧=新", help="方块替换规则，可重复。"
+    # tool 子命令的参数定义只有一份，在 tool/cli.py 里维护
+    from .tool.cli import build_parser as build_tool_parser
+
+    sub.add_parser(
+        "tool",
+        help="方向转换与方块替换工具",
+        parents=[build_tool_parser(add_help=False)],
     )
-    tool.add_argument("--suffix", default=None, help="输出文件名后缀。")
-    tool.add_argument("--keep-properties", action="store_true", help="替换时保留方块属性。")
 
     return parser
 
@@ -147,7 +133,11 @@ def _apply_overrides(config: AppConfig, args: argparse.Namespace) -> AppConfig:
 
 
 def run_convert(args: argparse.Namespace, config: AppConfig) -> int:
+    import numpy as np
+
+    from .matching.energy import build_palette_index
     from .matching.modes import describe_mode, get_match_mode
+    from .matching.palette import palette_names, palette_rgb
     from .pipeline.debug import render_color_preview, render_grid_overlay
     from .pipeline.export import csv_to_litematic
     from .pipeline.match import process_image
@@ -172,6 +162,9 @@ def run_convert(args: argparse.Namespace, config: AppConfig) -> int:
     block_size = resolve_block_size(config, args.block_size)
     print(f"方块大小: {block_size} 像素")
 
+    # 调色板预计算只做一次，所有图共用
+    palette = build_palette_index(palette_names(), np.array(palette_rgb()))
+
     failures = 0
     for index, image_path in enumerate(images, 1):
         print(f"[{index}/{len(images)}] 处理 {image_path.name}")
@@ -180,7 +173,7 @@ def run_convert(args: argparse.Namespace, config: AppConfig) -> int:
         render_grid_overlay(config, image_path, block_size)
         render_color_preview(config, image_path, block_size)
 
-        result = process_image(config, image_path, block_size, params)
+        result = process_image(config, image_path, block_size, params, palette)
         if result.error:
             print(f"  [ERR] {image_path.name}: {result.error}")
             failures += 1
@@ -248,42 +241,11 @@ def run_debug(args: argparse.Namespace, config: AppConfig) -> int:
 
 
 def run_tool(args: argparse.Namespace, config: AppConfig) -> int:
-    from .tool.cli import main as tool_main
+    # 参数已经在同一套解析器里解析好了（tool/cli.py 的 build_parser 作为父解析器），
+    # 直接分派即可 —— 顶层 --config 也不会再丢
+    from .tool.cli import run as tool_run
 
-    argv: list[str] = []
-    if args.cli:
-        argv.append("--cli")
-    if args.no_browser:
-        argv.append("--no-browser")
-    if args.host:
-        argv += ["--host", args.host]
-    if args.port:
-        argv += ["--port", str(args.port)]
-    if args.input:
-        argv += ["--input", args.input]
-    if args.output:
-        argv += ["--output", args.output]
-    if args.target:
-        argv += ["--target", args.target]
-    if args.source:
-        argv += ["--source", args.source]
-    if args.rotation is not None:
-        argv += ["--rotation", str(args.rotation)]
-    if args.flip:
-        argv.append("--flip")
-    if args.flip_v:
-        argv.append("--flip-v")
-    for name in ("rotate_x", "rotate_y", "rotate_z"):
-        value = getattr(args, name, None)
-        if value is not None:
-            argv += [f"--{name.replace('_', '-')}", str(value)]
-    for rule in args.replace or []:
-        argv += ["--replace", rule]
-    if args.suffix:
-        argv += ["--suffix", args.suffix]
-    if args.keep_properties:
-        argv.append("--keep-properties")
-    return tool_main(argv)
+    return tool_run(args)
 
 
 # --------------------------------------------------------------------------- #
@@ -292,6 +254,8 @@ def run_tool(args: argparse.Namespace, config: AppConfig) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # 库层的诊断日志走 stderr；CLI 自己的进度/摘要输出仍是 print（stdout）
+    logging.basicConfig(level=logging.WARNING)
     parser = build_parser()
     args = parser.parse_args(argv)
 

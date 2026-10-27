@@ -11,14 +11,14 @@ from scipy.signal import find_peaks
 from skimage import color
 from skimage.color import deltaE_ciede2000
 
-from mcyqqs.matching.palette import load_palette
+from pixelmatic.matching.palette import load_palette
 
 #: 材质图（不在版本库里，需要自己准备）
 IMG = "MCblocks.png"
 
 #: 调色板数据文件
 PALETTE_FILE = str(
-    Path(__file__).resolve().parents[1] / "src" / "mcyqqs" / "matching" / "palette.json"
+    Path(__file__).resolve().parents[1] / "src" / "pixelmatic" / "matching" / "palette.json"
 )
 
 MARGIN = 4
