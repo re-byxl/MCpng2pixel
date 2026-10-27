@@ -77,7 +77,7 @@ def _default_tool_settings() -> dict:
             "overwrite": True,
             "keep_properties": False,
             "plan": TransformPlan().to_dict(),
-            "replacements": {"red_concrete": "red_terracotta"},
+            "replacements": {},
         }
 
 
@@ -357,7 +357,7 @@ class Handler(BaseHTTPRequestHandler):
         elif route in ("/app.js", "/style.css"):
             self._send_file(os.path.join(WEB_DIR, route.lstrip("/")))
         elif route == "/api/state":
-            self._handle_state()
+            self._handle_state((query.get("input_dir") or [""])[0])
         elif route == "/api/job":
             job_id = (query.get("id") or [""])[0]
             job = self.jobs.get(job_id)
@@ -401,9 +401,10 @@ class Handler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------------ #
 
-    def _handle_state(self) -> None:
+    def _handle_state(self, input_dir_override: str = "") -> None:
+        """工具整体状态；``input_dir_override`` 让前端按输入框里的目录列文件（不落盘）。"""
         config = current_settings()
-        input_dir = resolve_path(config.get("input_dir", ""))
+        input_dir = resolve_path(input_dir_override or config.get("input_dir", ""))
         output_dir = resolve_path(config.get("output_dir", ""))
         files = list_input_files(input_dir)
 

@@ -58,7 +58,6 @@ function formatSize(bytes) {
 async function loadState() {
   const data = await api("/api/state");
   state.settings = data.settings;
-  state.files = data.files;
   state.blocks = data.blocks || [];
 
   $("#input-dir").value = data.input_dir;
@@ -70,6 +69,23 @@ async function loadState() {
   applyPlanToUI(data.settings.plan || {});
   fillBlockList();
   renderRules(data.settings.replacements || {});
+  applyFiles(data.files);
+}
+
+async function refreshFileList() {
+  // 按输入框里的目录列文件（不写进配置）—— 换目录后不用先「保存」就能看到里面的文件
+  const dir = $("#input-dir").value.trim();
+  const data = await api(`/api/state?input_dir=${encodeURIComponent(dir)}`);
+  state.blocks = data.blocks || [];
+  fillBlockList();
+  applyFiles(data.files);
+  log(`已列出 ${data.files.length} 个文件（${data.input_dir}）`);
+}
+
+function applyFiles(files) {
+  state.files = files;
+  state.selected.clear();
+  state.activeFile = null;
   renderFiles();
 
   if (state.files.length) {
@@ -328,6 +344,12 @@ async function saveSettings() {
     log("设置已保存到本地状态文件（.pixelmatic/tool_state.json），不会改动 config.json");
   } catch (err) {
     log(`保存失败：${err.message}`);
+    return;
+  }
+  try {
+    await refreshFileList();
+  } catch (err) {
+    log(`刷新文件列表失败：${err.message}`);
   }
 }
 
@@ -335,7 +357,15 @@ async function browse(targetId) {
   const start = $(targetId).value.trim();
   try {
     const data = await post("/api/browse", { start });
-    if (data.path) $(targetId).value = data.path;
+    if (!data.path) return;
+    $(targetId).value = data.path;
+    if (targetId === "#input-dir") {
+      try {
+        await refreshFileList();
+      } catch (err) {
+        log(`刷新文件列表失败：${err.message}`);
+      }
+    }
   } catch (err) {
     log(`选择文件夹失败：${err.message}`);
   }
@@ -406,9 +436,12 @@ function bind() {
   $("#btn-run").addEventListener("click", runTransform);
 
   $("#btn-refresh").addEventListener("click", async () => {
-    // 只重新读状态，不隐式保存 —— 「刷新」不该偷偷把输入框写进配置
-    await loadState();
-    log("已刷新文件列表");
+    // 只按输入框里的目录重新列文件，不隐式保存 —— 「刷新」不该偷偷把输入框写进配置
+    try {
+      await refreshFileList();
+    } catch (err) {
+      log(`刷新失败：${err.message}`);
+    }
   });
 
   $("#btn-select-all").addEventListener("click", () => {

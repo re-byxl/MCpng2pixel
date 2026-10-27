@@ -19,10 +19,23 @@ uv sync --dev      # 连测试、lint、类型检查工具一起装
 ```
 
 装完会有两个命令：`pixelmatic`（主命令）和 `python -m pixelmatic.tool`（方向转换工具）。
+注意它们装在项目的 `.venv/` 里，**不会**加进系统 PATH——不激活虚拟环境就直接敲
+`pixelmatic` 会报「无法识别」。两种运行方式：
+
+```powershell
+# 方式一（推荐）：加 uv run 前缀，不需要激活
+uv run pixelmatic convert
+
+# 方式二：先激活虚拟环境，之后可以直接敲 pixelmatic
+.venv\Scripts\Activate.ps1      # PowerShell
+# source .venv/bin/activate     # bash / zsh
+```
 
 ---
 
 ## 快速开始
+
+> 下文示例直接写 `pixelmatic ...`（假设已激活虚拟环境）；没激活的话，请给命令加上 `uv run ` 前缀。
 
 ```bash
 # 1. 把图片放进 input_images/
@@ -138,9 +151,7 @@ config.json                配置文件（工具的运行时状态另存 .pixelm
             "rotate_y": 0,
             "rotate_z": 0
         },
-        "replacements": {
-            "red_concrete": "red_terracotta"
-        }
+        "replacements": {}
     }
 }
 ```

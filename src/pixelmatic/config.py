@@ -111,7 +111,7 @@ class ToolConfig(BaseModel):
     overwrite: bool = True
     keep_properties: bool = False
     plan: TransformPlan = Field(default_factory=TransformPlan)
-    replacements: dict[str, str] = Field(default_factory=lambda: {"red_concrete": "red_terracotta"})
+    replacements: dict[str, str] = Field(default_factory=dict)
 
 
 class AppConfig(BaseModel):
